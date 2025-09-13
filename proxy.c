@@ -89,7 +89,7 @@ void forward(int connfd)
         return;
     }
     if(strcasecmp(method, "GET")) {
-        not_implemented(connfd, buf);
+        not_implemented(connfd, method);
         return;
     }
     if(parse_url(url, &info) < 0) {
@@ -138,7 +138,7 @@ void forward(int connfd)
         printf("%s", response);
     }
     Close(clientfd);
-    printf("Hoshi Proxy: Disconnected with server (%s, %s)\n", info.host, info.port);
+    printf("\nHoshi Proxy: Disconnected with server (%s, %s)\n", info.host, info.port);
     printf("\n");
     
     if(i == 1) { 
