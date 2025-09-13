@@ -17,7 +17,7 @@ typedef struct {
     char scheme[16];
     char host[256];
     char port[16];
-    char path[1024];
+    char path[1<<15];
 }url_info;
 
 typedef struct {
@@ -177,6 +177,14 @@ void clienterror(int fd, char *cause, char *errnum,
 }
 /* $end clienterror */
 
+// do strncpy, then add '\0' at the end
+void strncpy0(char* dest, const char* src, size_t count)
+{
+    strncpy(dest, src, count);
+    dest[count] = '\0';
+}
+
+
 // parse url into scheme, host, port and path, which is the
 // required uri, in ip structure.
 // only work with urls in the form of
@@ -195,7 +203,7 @@ int parse_url(const char url[], url_info *ip)
         printf("invalid url!\n");
         return -1;
     }
-    strncpy(ip->scheme, url, pos1-url);
+    strncpy0(ip->scheme, url, pos1-url);
     pos1 += 3;
     if((pos2 = strchr(pos1, '/')) == NULL) {
         pos2 = url + strlen(url);
@@ -211,10 +219,10 @@ int parse_url(const char url[], url_info *ip)
     }
     else{
         pos3 ++;
-        strncpy(ip->port, pos3, pos2-pos3);
+        strncpy0(ip->port, pos3, pos2-pos3);
+        pos3 --;
     }
-    pos3 --;
-    strncpy(ip->host, pos1, pos3-pos1);
+    strncpy0(ip->host, pos1, pos3-pos1);
 
     printf("Successfully parsed as:\n"
            "  scheme: %s\n"
