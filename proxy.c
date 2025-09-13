@@ -1,3 +1,6 @@
+// Hoshi Proxy
+
+
 #include "csapp.h"
 
 /* Recommended max cache and object sizes */
@@ -13,7 +16,7 @@ static const char *proxy_connection_hdr = "Proxy-Connection: close\r\n";
 typedef struct {
     char scheme[16];
     char host[256];
-    int port;
+    char port[16];
     char path[1024];
 }url_info;
 
@@ -27,10 +30,10 @@ typedef struct {
 
 typedef struct node{
     entry_t *entry;
-    node *prev, *next;
+    struct node *prev, *next;
 }node;
 
-struct cache{
+struct {
     pthread_mutex_t mutex;
     node head;
     size_t size;
@@ -66,6 +69,7 @@ int main(int argc, char *argv[])
         printf("Hoshi Proxy: Accepted connection from (%s, %s)\n", hostname, port);
         forward(connfd);
         Close(connfd);
+        printf("Hoshi Proxy: Disconnected with client (%s, %s)\n", hostname, port);
     }
     return 0;
 }
@@ -123,22 +127,25 @@ void forward(int connfd)
     int i = 0;
     char response[MAX_OBJECT_SIZE + MAXLINE];
     clientfd = Open_clientfd(info.host, info.port);
+    printf("Hoshi Proxy: Connected with server (%s, %s)\n", info.host, info.port);
     Rio_writen(clientfd, request, strlen(request));
 
     
     printf("Hoshi Proxy: received response:\n");
-    while(rc = Rio_readn(clientfd, response, sizeof(response)) != 0) {
+    while((rc = Rio_readn(clientfd, response, sizeof(response))) != 0) {
         Rio_writen(connfd, response, rc);
         i ++;
         printf("%s", response);
     }
+    Close(clientfd);
+    printf("Hoshi Proxy: Disconnected with server (%s, %s)\n", info.host, info.port);
     printf("\n");
     
     if(i == 1) { 
         // may need to be cached
     }
     
-    Close(clientfd);
+    
 }
 
 /*
@@ -171,14 +178,14 @@ void clienterror(int fd, char *cause, char *errnum,
 /* $end clienterror */
 
 // parse url into scheme, host, port and path, which is the
-// required uri.
+// required uri, in ip structure.
 // only work with urls in the form of
 // "scheme://host[:port=80]/path[?query][#fragment]"
 // "[user:password@]" is not supported
 // return 0 on success, -1 on invalid url
 int parse_url(const char url[], url_info *ip)
 {
-    char *pos1, *pos2, *pos3;
+    const char *pos1, *pos2, *pos3;
     if(ip == NULL)
         app_error("null ip in parse_url()");
 
@@ -203,12 +210,13 @@ int parse_url(const char url[], url_info *ip)
         strcpy(ip->port, "80");
     }
     else{
+        pos3 ++;
         strncpy(ip->port, pos3, pos2-pos3);
     }
-
+    pos3 --;
     strncpy(ip->host, pos1, pos3-pos1);
 
-    printf("successfully parsed as:\n"
+    printf("Successfully parsed as:\n"
            "  scheme: %s\n"
            "  host: %s\n"
            "  port: %s\n"
