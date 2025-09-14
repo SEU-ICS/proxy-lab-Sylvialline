@@ -44,10 +44,7 @@ int main(int argc, char *argv[])
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
         Getnameinfo((SA *)&clientaddr, clientlen, host, sizeof(host), port, sizeof(port), 0);
-        // printf("Hoshi Proxy: Accepted connection from (%s, %s)\n", host, port);
         forward(connfd, host, port);
-        // Close(connfd);
-        // printf("Hoshi Proxy: Disconnected with client (%s, %s)\n", host, port);
     }
     return 0;
 }
@@ -116,7 +113,7 @@ void relay(int connfd)
     if((resp = cache_lookup(key)) != NULL) {
         // cache hit
         printf("Hoshi Proxy(%lu): Cached response:\n%s\n", tid, resp);
-        Rio_writen(connfd, resp, sizeof(resp));
+        Rio_writen(connfd, resp, strlen(resp));
         return;
     }
     // cache miss
@@ -126,20 +123,20 @@ void relay(int connfd)
     int host_specified = 0;
     for(;;){
         Rio_readlineb(&rio, buf, MAXLINE);
-        if(strcmp(buf, "\r\n"))break;
+        if(strcmp(buf, "\r\n") == 0)break;
         if(sscanf(buf, "%s: %s", name, data) != 2) {
             bad_request(connfd, buf);
             return;
         }
         if(strcasecmp(name, "Host") == 0) {
-            sprintf(request, "%s%s\r\n", request, buf);
+            sprintf(request, "%s%s", request, buf);
             host_specified = 1;
         }
         else if(strcasecmp(name, "User-Agent")
              && strcasecmp(name, "Connection")
              && strcasecmp(name, "Proxy-Connection"))
         {
-            sprintf(request, "%s%s\r\n", request, buf);
+            sprintf(request, "%s%s", request, buf);
         }
     }
     if(!host_specified) {
@@ -170,7 +167,10 @@ void relay(int connfd)
     
     if(i == 1) { 
         // may need to be cached
-
+        if(cache_insert(key, response) != -1){
+            printf("\nHoshi Proxy(%lu): Successfully cached \"%s\"\n", tid, key);
+        }
+        else printf("\nHoshi Proxy(%lu): Cache failed!\n", tid);
     }
     
     
