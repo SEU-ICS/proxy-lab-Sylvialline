@@ -88,10 +88,10 @@ void relay(int connfd)
 {
     char buf[MAXLINE], request[MAXLINE];
     char method[MAXLINE], url[MAXLINE], version[MAXLINE];
-    char name[MAXLINE], data[MAXLINE];
     rio_t rio;
     url_info info;
     pthread_t tid = pthread_self();
+    size_t rlen = 0;
 
     // parse request line
     Rio_readinitb(&rio, connfd);
@@ -108,7 +108,8 @@ void relay(int connfd)
         bad_request(connfd, url);
         return;
     }
-    sprintf(request, "%s %s %s\r\n", method, info.path, "HTTP/1.0");
+    rlen += snprintf(request + rlen, sizeof(request) - rlen,
+                    "%s %s %s\r\n", method, info.path, "HTTP/1.0");
     
     // lookup in cache
     printf("Hoshi Proxy(%lu): Cache lookup...\n", tid);
@@ -130,27 +131,23 @@ void relay(int connfd)
     // parse request headers
     int host_specified = 0;
     for(;;){
-        Rio_readlineb(&rio, buf, MAXLINE);
-        if(strcmp(buf, "\r\n") == 0)break;
-        if(sscanf(buf, "%s: %s", name, data) != 2) {
-            bad_request(connfd, buf);
-            return;
-        }
-        if(strcasecmp(name, "Host") == 0) {
-            sprintf(request, "%s%s", request, buf);
-            host_specified = 1;
-        }
-        else if(strcasecmp(name, "User-Agent")
-             && strcasecmp(name, "Connection")
-             && strcasecmp(name, "Proxy-Connection"))
-        {
-            sprintf(request, "%s%s", request, buf);
+        if (!Rio_readlineb(&rio, buf, MAXLINE)) return;
+        if (strcmp(buf, "\r\n") == 0) break;
+        if (!strncasecmp(buf, "Host:", 5)) host_specified = 1;
+        
+        if (strncasecmp(buf, "User-Agent:",11) &&
+            strncasecmp(buf, "Connection:",11) &&
+            strncasecmp(buf, "Proxy-Connection:",17)) {
+            size_t n = strnlen(buf, MAXLINE);
+            if (rlen + n < sizeof(request)) { memcpy(request + rlen, buf, n); rlen += n; }
         }
     }
     if(!host_specified) {
-        sprintf(request, "%sHost: %s\r\n", request, info.host);
+        rlen += snprintf(request + rlen, sizeof(request) - rlen, "Host: %s\r\n", info.host);
     }
-    sprintf(request, "%s%s%s%s\r\n", request, user_agent_hdr, connection_hdr, proxy_connection_hdr);
+    rlen += snprintf(request + rlen, sizeof(request) - rlen,
+                    "%s%s%s\r\n", user_agent_hdr, connection_hdr, proxy_connection_hdr);
+                    
     // request preparation finished
     printf("Hoshi Proxy(%lu): Parsed request:\n%s\n", tid, request);
 
@@ -159,14 +156,16 @@ void relay(int connfd)
     int i = 0;
     clientfd = Open_clientfd(info.host, info.port);
     printf("Hoshi Proxy(%lu): Connected with server (%s, %s)\n", tid, info.host, info.port);
-    Rio_writen(clientfd, request, strlen(request));
+    Rio_writen(clientfd, request, rlen);
 
     char response[MAX_OBJECT_SIZE + MAXLINE];
+    size_t resp_size = 0;
     printf("Hoshi Proxy(%lu): Received response:\n", tid);
     while((rc = Rio_readn(clientfd, response, sizeof(response))) != 0) {
         Rio_writen(connfd, response, rc);
+        resp_size += rc;
         i ++;
-        printf("%s", response);
+        // printf("%s", response);
     }
     Close(clientfd);
     printf("\nHoshi Proxy(%lu): Disconnected with server (%s, %s)\n", tid, info.host, info.port);
@@ -174,10 +173,11 @@ void relay(int connfd)
     
     if(i == 1) { 
         // may need to be cached
-        if(cache_insert(key, response, rc) != -1){
-            printf("\nHoshi Proxy(%lu): Successfully cached \"%s\"\n", tid, key);
+        printf("\nHoshi Proxy(%lu): Try cache (size %ld)\n", tid, resp_size);
+        if(cache_insert(key, response, resp_size) != -1){
+            printf("Hoshi Proxy(%lu): Successfully cached \"%s\"\n", tid, key);
         }
-        else printf("\nHoshi Proxy(%lu): Cache failed!\n", tid);
+        else printf("Hoshi Proxy(%lu): Cache failed!\n", tid);
     }
     
     
