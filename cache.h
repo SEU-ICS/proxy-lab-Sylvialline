@@ -19,4 +19,4 @@ void freenode(node *p);
 void cache_init();
 void make_cache_key(url_info *ip, char *key);
 int cache_insert(char *key, char *response);
-char *cache_lookup(char *key);
+int cache_lookup_copy(char *key, char *resp);

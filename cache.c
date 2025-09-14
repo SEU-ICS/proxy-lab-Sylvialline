@@ -88,9 +88,9 @@ int cache_insert(char *key, char *response) {
     return 0;
 }
 
-// if successed, return the pointer to cached response
-// NULL if cache miss
-char *cache_lookup(char *key) {
+// if successed, copy the response to resp, return 0
+// return -1 if missed
+int cache_lookup_copy(char *key, char *resp) {
     node *p, *h = &cache.head;
     pthread_mutex_lock(&cache.mutex);
     for(p = h->next; p != h; p = p->next) {
@@ -100,9 +100,11 @@ char *cache_lookup(char *key) {
         // hit
         withdraw(p);
         insert(p);
+        strcpy(resp, p->entry->response);
+        printf("Current cache size: %ld\n", cache.size);
         pthread_mutex_unlock(&cache.mutex);
-        return p->entry->response;
+        return 0;
     }
     pthread_mutex_unlock(&cache.mutex);
-    return NULL;
+    return -1;
 }
