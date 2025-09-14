@@ -37,12 +37,16 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    printf("Hoshi Proxy started!\n");
+
     cache_init();
 
     listenfd = Open_listenfd(argv[1]);
     while(1) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+        
+        // printf("accepted: %d\n", connfd);
         Getnameinfo((SA *)&clientaddr, clientlen, host, sizeof(host), port, sizeof(port), 0);
         forward(connfd, host, port);
     }

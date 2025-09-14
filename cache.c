@@ -36,11 +36,11 @@ void make_cache_key(url_info *ip, char *key) {
 entry_t *make_entry(char *key, char *resp){
     entry_t *e = Malloc(sizeof(entry_t));
     strcpy(e->key, key);
-    e->response_size = sizeof(resp);
+    e->response_size = strlen(resp);
     e->response = Malloc(e->response_size);
     strcpy(e->response, resp);
     e->body = strstr(e->response, "\r\n\r\n") + 4;
-    e->body_size = sizeof(e->body);
+    e->body_size = strlen(e->body);
     return e;
 }
 
@@ -66,7 +66,7 @@ int cache_insert(char *key, char *response) {
     char *body = strstr(response, "\r\n\r\n");
     if(!body) return -1;
     body += 4;
-    size = sizeof(body);
+    size = strlen(body);
     if(size > MAX_OBJECT_SIZE)
         return -1;
     h = &cache.head;
