@@ -12,12 +12,16 @@ static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64;
 static const char *connection_hdr = "Connection: close\r\n";
 static const char *proxy_connection_hdr = "Proxy-Connection: close\r\n";
 
+#define MAX_SCHEME 16
+#define MAX_HOST 256
+#define MAX_PORT 16
+#define MAX_PATH 1<<15
 
 typedef struct {
-    char scheme[16];
-    char host[256];
-    char port[16];
-    char path[1<<15];
+    char scheme[MAX_SCHEME];
+    char host[MAX_HOST];
+    char port[MAX_PORT];
+    char path[MAX_PATH];
 }url_info;
 
 typedef struct {
@@ -41,9 +45,14 @@ struct {
 
 void cache_init();
 void cache_insert(char *uri, char *response);
-void forward(int connfd);
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+
+void forward(int connfd, char *host, char *port);
+void *entry(void *varg); // thread entry
+void connect_client(int connfd);
+
 int parse_url(const char url[], url_info *ip);
+
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 void bad_request(int fd, char cause[]){
     clienterror(fd, cause, "400", "Bad Request", "Hoshi Proxy cannot parse this request");
 }
@@ -56,7 +65,7 @@ int main(int argc, char *argv[])
     int listenfd, connfd;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
-    char hostname[MAXLINE], port[MAXLINE];
+    char host[MAX_HOST], port[MAX_PORT];
     if(argc != 2) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         exit(1);
@@ -65,22 +74,54 @@ int main(int argc, char *argv[])
     while(1) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-        Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
-        printf("Hoshi Proxy: Accepted connection from (%s, %s)\n", hostname, port);
-        forward(connfd);
-        Close(connfd);
-        printf("Hoshi Proxy: Disconnected with client (%s, %s)\n", hostname, port);
+        Getnameinfo((SA *)&clientaddr, clientlen, host, sizeof(host), port, sizeof(port), 0);
+        // printf("Hoshi Proxy: Accepted connection from (%s, %s)\n", host, port);
+        forward(connfd, host, port);
+        // Close(connfd);
+        // printf("Hoshi Proxy: Disconnected with client (%s, %s)\n", host, port);
     }
     return 0;
 }
 
-void forward(int connfd)
+typedef struct {
+    int connfd;
+    char host[MAX_HOST], port[MAX_PORT];
+}arg_t;
+
+void forward(int connfd, char *host, char *port)
+{
+    pthread_t tid;
+
+    arg_t *arg = Malloc(sizeof(arg_t));
+    arg->connfd = connfd;
+    strcpy(arg->host, host);
+    strcpy(arg->port, port);
+
+    Pthread_create(&tid, NULL, entry, arg);
+    Pthread_detach(tid);
+}
+
+void *entry(void *varg)
+{
+    arg_t *arg= (arg_t *)varg;
+    pthread_t tid = pthread_self();
+    
+    printf("Hoshi Proxy(%lu): Accepted connection from (%s, %s)\n", tid, arg->host, arg->port);
+    connect_client(arg->connfd);
+    Close(arg->connfd);
+    printf("Hoshi Proxy(%lu): Disconnected with client (%s, %s)\n", tid, arg->host, arg->port);
+    Free(varg);
+    return NULL;
+}
+
+void connect_client(int connfd)
 {
     char buf[MAXLINE], request[MAXLINE];
     char method[MAXLINE], url[MAXLINE], version[MAXLINE];
     char name[MAXLINE], data[MAXLINE];
     rio_t rio;
     url_info info;
+    pthread_t tid = pthread_self();
 
     Rio_readinitb(&rio, connfd);
     if(!Rio_readlineb(&rio, buf, MAXLINE)) return;
@@ -121,24 +162,24 @@ void forward(int connfd)
     }
     sprintf(request, "%s%s%s%s\r\n", request, user_agent_hdr, connection_hdr, proxy_connection_hdr);
     // request preparation finished
-    printf("Hoshi Proxy: parsed request:\n%s\n", request);
+    printf("Hoshi Proxy(%lu): Parsed request:\n%s\n", tid, request);
 
     int clientfd, rc;
     int i = 0;
     char response[MAX_OBJECT_SIZE + MAXLINE];
     clientfd = Open_clientfd(info.host, info.port);
-    printf("Hoshi Proxy: Connected with server (%s, %s)\n", info.host, info.port);
+    printf("Hoshi Proxy(%lu): Connected with server (%s, %s)\n", tid, info.host, info.port);
     Rio_writen(clientfd, request, strlen(request));
 
     
-    printf("Hoshi Proxy: received response:\n");
+    printf("Hoshi Proxy(%lu): Received response:\n", tid);
     while((rc = Rio_readn(clientfd, response, sizeof(response))) != 0) {
         Rio_writen(connfd, response, rc);
         i ++;
         printf("%s", response);
     }
     Close(clientfd);
-    printf("\nHoshi Proxy: Disconnected with server (%s, %s)\n", info.host, info.port);
+    printf("\nHoshi Proxy(%lu): Disconnected with server (%s, %s)\n", tid, info.host, info.port);
     printf("\n");
     
     if(i == 1) { 
@@ -197,7 +238,7 @@ int parse_url(const char url[], url_info *ip)
     if(ip == NULL)
         app_error("null ip in parse_url()");
 
-    printf("Hoshi Proxy:\nParsing %s...\n", url);
+    printf("Hoshi Proxy(%lu):\nParsing \"%s\"...\n", pthread_self(), url);
 
     if((pos1 = strstr(url, "://")) == NULL){
         printf("invalid url!\n");
