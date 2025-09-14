@@ -112,12 +112,16 @@ void relay(int connfd)
     
     // lookup in cache
     printf("Hoshi Proxy(%lu): Cache lookup...\n", tid);
-    char key[MAXLINE], response[MAX_OBJECT_SIZE + MAXLINE];
+    char key[MAXLINE];
     make_cache_key(&info, key);
-    if(cache_lookup_copy(key, response) != -1) {
+    size_t resp_len = 0;
+    char *cached = NULL;
+
+    if(cache_lookup_copy(key, &cached, &resp_len) != -1) {
         // cache hit
-        printf("Hoshi Proxy(%lu): Cached response:\n%s\n", tid, response);
-        Rio_writen(connfd, response, strlen(response));
+        printf("Hoshi Proxy(%lu): Cached response:\n%s\n", tid, cached);
+        Rio_writen(connfd, cached, resp_len);
+        Free(cached);
         return;
     }
     // cache miss
@@ -157,7 +161,7 @@ void relay(int connfd)
     printf("Hoshi Proxy(%lu): Connected with server (%s, %s)\n", tid, info.host, info.port);
     Rio_writen(clientfd, request, strlen(request));
 
-    
+    char response[MAX_OBJECT_SIZE + MAXLINE];
     printf("Hoshi Proxy(%lu): Received response:\n", tid);
     while((rc = Rio_readn(clientfd, response, sizeof(response))) != 0) {
         Rio_writen(connfd, response, rc);
@@ -170,7 +174,7 @@ void relay(int connfd)
     
     if(i == 1) { 
         // may need to be cached
-        if(cache_insert(key, response) != -1){
+        if(cache_insert(key, response, rc) != -1){
             printf("\nHoshi Proxy(%lu): Successfully cached \"%s\"\n", tid, key);
         }
         else printf("\nHoshi Proxy(%lu): Cache failed!\n", tid);

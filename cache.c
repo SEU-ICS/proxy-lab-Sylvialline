@@ -33,14 +33,15 @@ void make_cache_key(url_info *ip, char *key) {
     printf("cache key: %s\n", key);
 }
 
-entry_t *make_entry(char *key, char *resp){
+entry_t *make_entry(char *key, char *resp, size_t resp_len){
     entry_t *e = Malloc(sizeof(entry_t));
     strcpy(e->key, key);
-    e->response_size = strlen(resp);
-    e->response = Malloc(e->response_size);
-    strcpy(e->response, resp);
-    e->body = strstr(e->response, "\r\n\r\n") + 4;
-    e->body_size = strlen(e->body);
+
+    e->response_size = resp_len;
+    e->response = Malloc(resp_len);
+    memcpy(e->response, resp, resp_len);
+    e->body = strstr(e->response, "\r\n\r\n") + 4; // problematic?
+    e->body_size = resp_len - (size_t)(e->body - e->response);
     return e;
 }
 
@@ -59,20 +60,16 @@ static void insert(node *p) {
 }
 
 // return 0 on success, -1 on error
-int cache_insert(char *key, char *response) {
+int cache_insert(char *key, char *resp, size_t resp_len) {
     node *h, *p, *q;
-    int size;
-    
-    char *body = strstr(response, "\r\n\r\n");
-    if(!body) return -1;
-    body += 4;
-    size = strlen(body);
-    if(size > MAX_OBJECT_SIZE)
-        return -1;
     h = &cache.head;
     p = Malloc(sizeof(node));
-    p->entry = make_entry(key, response);
-    assert(size == p->entry->body_size);
+    p->entry = make_entry(key, resp, resp_len);
+    int size = p->entry->body_size;
+    if(size > MAX_OBJECT_SIZE){
+        freenode(p);
+        return -1;
+    }
     
     pthread_mutex_lock(&cache.mutex);
     while(cache.size + size > MAX_CACHE_SIZE) {
@@ -83,6 +80,7 @@ int cache_insert(char *key, char *response) {
     }
     insert(p);
     cache.size += size;
+    printf("Current cache size: %ld\n", cache.size);
     pthread_mutex_unlock(&cache.mutex);
     
     return 0;
@@ -90,7 +88,7 @@ int cache_insert(char *key, char *response) {
 
 // if successed, copy the response to resp, return 0
 // return -1 if missed
-int cache_lookup_copy(char *key, char *resp) {
+int cache_lookup_copy(char *key, char **outbuf, size_t *outlen) {
     node *p, *h = &cache.head;
     pthread_mutex_lock(&cache.mutex);
     for(p = h->next; p != h; p = p->next) {
@@ -98,10 +96,10 @@ int cache_lookup_copy(char *key, char *resp) {
     }
     if(p != h){
         // hit
-        withdraw(p);
-        insert(p);
-        strcpy(resp, p->entry->response);
-        printf("Current cache size: %ld\n", cache.size);
+        withdraw(p); insert(p);
+        *outlen = p->entry->response_size;
+        *outbuf = Malloc(*outlen);
+        memcpy(*outbuf, p->entry->response, *outlen);
         pthread_mutex_unlock(&cache.mutex);
         return 0;
     }

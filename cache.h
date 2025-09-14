@@ -14,9 +14,9 @@ typedef struct node{
     struct node *prev, *next;
 }node;
 
-entry_t *make_entry(char *key, char *resp);
+entry_t *make_entry(char *key, char *resp, size_t resp_len);
 void freenode(node *p);
 void cache_init();
 void make_cache_key(url_info *ip, char *key);
-int cache_insert(char *key, char *response);
-int cache_lookup_copy(char *key, char *resp);
+int cache_insert(char *key, char *resp, size_t resp_len);
+int cache_lookup_copy(char *key, char **outbuf, size_t *outlen);
