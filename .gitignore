@@ -4,3 +4,6 @@
 tiny/tiny
 proxy
 tiny/cgi-bin/adder
+*.pdf
+cache_debug.sh
+concurrency_debug.sh

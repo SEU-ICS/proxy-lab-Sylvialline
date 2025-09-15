@@ -1,0 +1,10 @@
+{
+  "files.associations": {
+    "csapp.h": "c",
+    "stdio.h": "c",
+    "inet.h": "c",
+    "assert.h": "c",
+    "def.h": "c",
+    "cache.h": "c"
+  }
+}
